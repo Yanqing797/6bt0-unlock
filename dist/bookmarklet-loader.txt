@@ -1,0 +1,1 @@
+javascript:(function(){if(window.__6bt0unlockLoaded)return;window.__6bt0unlockLoaded=1;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/Yanqing797/6bt0-unlock@main/userscript/6bt0-vip.user.js';s.onerror=function(){alert('脚本加载失败，检查网络或改用 inline 版')};document.body.appendChild(s)})()

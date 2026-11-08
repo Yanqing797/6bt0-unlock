@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+6bt0_links.txt
+.DS_Store
+.venv/
