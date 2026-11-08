@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         6bt0 会员解锁 + 网盘直链导出
+// @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.0.1
+// @version      1.0.2
 // @description  影视站 6bt0 / 0bt0~9bt0 一键解锁永久会员（伪支付回调），并批量导出全站网盘直链
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
