@@ -30,10 +30,12 @@
    - Safari：[Userscripts](https://apps.apple.com/app/userscripts/id1463298887) 或 Tampermonkey
    - iPhone Safari 也能用 Userscripts；安卓可用 Kiwi / Firefox + 油猴
 
-2. **装脚本**：点这个链接 → 油猴会自动弹安装页 → 点「安装」
-   ```
-   https://raw.githubusercontent.com/Yanqing797/6bt0-unlock/main/userscript/6bt0-vip.user.js
-   ```
+2. **装脚本**：点链接 → 油猴弹出安装页 → 点「安装」
+
+   - 国内推荐（GreasyFork CDN，直连不卡）：
+     https://greasyfork.org/zh-CN/scripts/604404
+   - 备用（GitHub 直链，需要网络能到 `raw.githubusercontent.com`）：
+     https://raw.githubusercontent.com/Yanqing797/6bt0-unlock/main/userscript/6bt0-vip.user.js
 
 3. **打开站点**：`https://www.6bt0.com`（镜像 `www.0bt0.com` ~ `www.9bt0.com` 都支持），
    右下角会出现一个「6bt0 解锁」面板。

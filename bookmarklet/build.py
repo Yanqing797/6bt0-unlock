@@ -51,11 +51,17 @@ def main():
 
     # 1) loader 版：从 jsDelivr 拉
     cdn = f"https://cdn.jsdelivr.net/gh/{a.user}/{a.repo}@{a.branch}/userscript/6bt0-vip.user.js"
+    # 多源回退：GreasyFork CDN → jsDelivr → GitHub raw
+    gf = ("https://update.greasyfork.org/scripts/604404/"
+          "6bt0%EF%BC%88%E4%B8%8D%E5%A4%AA%E7%81%B5%EF%BC%89%20%E4%BC%9A%E5%91%98"
+          "%E8%A7%A3%E9%94%81%20%2B%20%E7%BD%91%E7%9B%98%E7%9B%B4%E9%93%BE%E5%AF%BC%E5%87%BA.user.js")
+    raw = f"https://raw.githubusercontent.com/{a.user}/{a.repo}/{a.branch}/userscript/6bt0-vip.user.js"
     loader = (
         "javascript:(function(){if(window.__6bt0unlockLoaded)return;window.__6bt0unlockLoaded=1;"
-        "var s=document.createElement('script');s.src='" + cdn + "';"
-        "s.onerror=function(){alert('脚本加载失败，检查网络或改用 inline 版')};"
-        "document.body.appendChild(s)})()"
+        "var srcs=['" + gf + "','" + cdn + "','" + raw + "'],i=0;"
+        "function go(){if(i>=srcs.length){alert('脚本加载失败，检查网络或改用 inline 版');return;}"
+        "var s=document.createElement('script');s.src=srcs[i++];s.onerror=go;"
+        "document.body.appendChild(s);}go()})()"
     )
     open(os.path.join(OUT, "bookmarklet-loader.txt"), "w", encoding="utf-8").write(loader)
 
