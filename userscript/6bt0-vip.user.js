@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.0.2
+// @version      1.0.3
 // @description  影视站 6bt0 / 0bt0~9bt0 一键解锁永久会员（伪支付回调），并批量导出全站网盘直链
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -206,9 +206,10 @@
   .unlock-input{width:100%;box-sizing:border-box;background:#0f141c;border:1px solid #2f3a4c;
     color:#dfe6f0;border-radius:8px;padding:7px 9px;font-size:12.5px;outline:none}
   .unlock-input:focus{border-color:#165dff}
-  .unlock-cap{display:flex;gap:8px;align-items:center;margin-top:8px}
-  .unlock-cap img{height:38px;border-radius:6px;background:#fff;cursor:pointer}
-  .unlock-cap .unlock-input{width:90px}
+  .unlock-cap{display:flex;gap:6px;align-items:center;margin-top:8px}
+  .unlock-cap img{height:36px;max-width:42%;object-fit:contain;flex:0 1 auto;border-radius:6px;background:#fff;cursor:pointer}
+  .unlock-cap .unlock-input{flex:1 1 auto;width:auto;min-width:52px}
+  .unlock-cap .unlock-btn{flex:0 0 56px;padding:9px 6px}
   .unlock-list{max-height:180px;overflow:auto;margin-top:8px;font-size:11.5px;color:#93a1b5}
   .unlock-list div{padding:3px 0;border-bottom:1px dashed #222b38;word-break:break-all}
   .unlock-list a{color:#4d8bff;text-decoration:none}
@@ -253,7 +254,7 @@
           <div class="unlock-cap">
             <img id="unlock-capimg" title="点击刷新" />
             <input class="unlock-input" id="unlock-capcode" placeholder="算术答案" />
-            <button class="unlock-btn" id="unlock-authgo" style="flex:0 0 62px">确定</button>
+            <button class="unlock-btn" id="unlock-authgo">确定</button>
           </div>
           <div class="unlock-tip" id="unlock-authtip"></div>
         </div>
