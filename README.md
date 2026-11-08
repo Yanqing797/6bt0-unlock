@@ -5,6 +5,8 @@
 
 **🌐 在线安装页（分享这个链接最省事）：https://yanqing797.github.io/6bt0-unlock/**
 
+**🦞 GreasyFork 发布页：https://greasyfork.org/zh-CN/scripts/604404**　（也可以在 GreasyFork 里搜「6bt0」）
+
 ![面板](docs/panel.png)
 
 ---
