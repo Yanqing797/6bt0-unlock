@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.0.3
-// @description  影视站 6bt0 / 0bt0~9bt0 一键解锁永久会员（伪支付回调），并批量导出全站网盘直链
+// @version      1.1.0
+// @description  6bt0 / 0bt0~9bt0 网盘直链批量导出（会员解锁已于 2026-11-09 被站点修复，仅作记录）
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
 // @supportURL   https://github.com/Yanqing797/6bt0-unlock/issues
@@ -40,7 +40,7 @@
   const randId = () => 'u' + Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 4);
   const randPw = () => 'Kq' + Math.random().toString(36).slice(2, 10) + '!9';
 
-  function toast(msg, kind) {
+  function toast(msg, kind, ms) {
     const el = document.createElement('div');
     el.className = 'unlock-toast ' + (kind || 'info');
     el.textContent = msg;
@@ -48,7 +48,7 @@
     setTimeout(() => {
       el.style.opacity = '0';
       setTimeout(() => el.remove(), 400);
-    }, 2600);
+    }, ms || 2600);
   }
 
   function logStep(p) {
@@ -265,7 +265,10 @@
           </div>
         </div>
         <div class="unlock-list" id="unlock-result" style="display:none"></div>
-        <div class="unlock-tip">仅在小号上使用。重复点「解锁」会叠加会员时长，无害但没必要。</div>
+        <div class="unlock-tip" id="unlock-status">
+          状态：会员解锁已于 <b>2026-11-09</b> 被站点修复（<code>/notify</code> 现在校验签名）。
+          直链导出仍可用，每部影片约 3 条公开直链。
+        </div>
       </div>`;
     document.body.appendChild(p);
 
@@ -335,7 +338,8 @@
           toast('✔ 永久会员已开通：' + (r.user.vip_expire_at || ''), 'ok');
           await refreshMeta();
         } else {
-          toast('没到账，回调返回：' + r.cb, 'err');
+          toast('解锁失败：站点已修复支付回调（回调返回 ' + (r.cb || 'fail') + '）。'
+                + '当前仍可点「导出本页直链」拿公开直链。', 'err', 6000);
         }
       } else if (kind === 'export') {
         const m = location.pathname.match(/\/mv\/(\d+)/) || location.pathname.match(/\/tv\/(\d+)/);

@@ -18,7 +18,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const tok = () => localStorage.getItem(LS_TOKEN) || '';
 const randId = () => 'u' + Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 4);
 const randPw = () => 'Kq' + Math.random().toString(36).slice(2, 10) + '!9';
-function toast(msg, kind) {
+function toast(msg, kind, ms) {
 const el = document.createElement('div');
 el.className = 'unlock-toast ' + (kind || 'info');
 el.textContent = msg;
@@ -26,7 +26,7 @@ document.body.appendChild(el);
 setTimeout(() => {
 el.style.opacity = '0';
 setTimeout(() => el.remove(), 400);
-}, 2600);
+}, ms || 2600);
 }
 function logStep(p) {
 const box = $('#unlock-progress');
@@ -228,7 +228,10 @@ p.innerHTML = `
 </div>
 </div>
 <div class="unlock-list" id="unlock-result" style="display:none"></div>
-<div class="unlock-tip">仅在小号上使用。重复点「解锁」会叠加会员时长，无害但没必要。</div>
+<div class="unlock-tip" id="unlock-status">
+状态：会员解锁已于 <b>2026-11-09</b> 被站点修复（<code>/notify</code> 现在校验签名）。
+直链导出仍可用，每部影片约 3 条公开直链。
+</div>
 </div>`;
 document.body.appendChild(p);
 $('#unlock-min').onclick = () => p.classList.toggle('min');
@@ -291,7 +294,8 @@ if (r.ok) {
 toast('✔ 永久会员已开通：' + (r.user.vip_expire_at || ''), 'ok');
 await refreshMeta();
 } else {
-toast('没到账，回调返回：' + r.cb, 'err');
+toast('解锁失败：站点已修复支付回调（回调返回 ' + (r.cb || 'fail') + '）。'
++ '当前仍可点「导出本页直链」拿公开直链。', 'err', 6000);
 }
 } else if (kind === 'export') {
 const m = location.pathname.match(/\/mv\/(\d+)/) || location.pathname.match(/\/tv\/(\d+)/);
