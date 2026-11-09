@@ -32,8 +32,30 @@ function logStep(p) {
 const box = $('#unlock-progress');
 if (box) box.textContent = p;
 }
+/* ────────────────────────── 反检测：节流 / 配额 ────────────────────────── */
+const LS_BUDGET = '6bt0_unlock_budget';
+const LS_LASTREG = '6bt0_unlock_lastreg';
+const HOURLY_BUDGET = 120;          // 每小时最多 120 次接口调用
+const jitter = () => sleep(200 + Math.random() * 500);
+function budget() {
+const now = Date.now();
+let b = {};
+try { b = JSON.parse(localStorage.getItem(LS_BUDGET) || '{}'); } catch {}
+if (!b.t || now - b.t > 3600e3) b = { t: now, n: 0 };
+b.n += 1;
+localStorage.setItem(LS_BUDGET, JSON.stringify(b));
+return b.n;
+}
+function regCooldownLeft() {
+const t = Number(localStorage.getItem(LS_LASTREG) || 0);
+return Math.max(0, 24 * 3600e3 - (Date.now() - t));
+}
 /* ────────────────────────── API ────────────────────────── */
 async function api(path, { params = {}, token = tok(), method = 'GET', body } = {}) {
+if (budget() > HOURLY_BUDGET) {
+return { code: -2, message: '本小时请求数已达上限（120），为降低被风控概率已暂停，稍后再试' };
+}
+await jitter();
 const q = new URLSearchParams({ ...FIX, ...params });
 if (token) q.set('access_token', token);
 const opt = { method, credentials: 'include', headers: {
@@ -408,18 +430,40 @@ navigator.clipboard && navigator.clipboard.writeText(txt).catch(() => {});
 download('6bt0-links.txt', txt);
 toast(`✔ ${rows.length} 条直链已复制并下载`, 'ok');
 }
-/* ────────────────────────── 登录 / 注册 ────────────────────────── */
+/* ────────────────────────── 登录 / 注册（全自动） ────────────────────────── */
 let authMode = 'reg';
 let capData = null;
+let authBusy = false;
+const loadAcc = () => { try { return JSON.parse(localStorage.getItem(LS_ACC) || '{}'); } catch { return {}; } };
+const saveAcc = (o) => localStorage.setItem(LS_ACC, JSON.stringify({ ...loadAcc(), ...o }));
+function tip(msg, kind) {
+const el = $('#unlock-authtip');
+if (!el) return;
+el.textContent = msg || '';
+el.style.color = kind === 'err' ? '#f53f3f' : kind === 'ok' ? '#00b42a' : '#5d6878';
+}
 async function auth(mode) {
 authMode = mode;
 const box = $('#unlock-auth');
-box.style.display = box.style.display === 'none' ? 'block' : 'none';
-if (box.style.display === 'none') return;
-$('#unlock-login').textContent = mode === 'login' ? '登录' : '登录';
+const willOpen = box.style.display !== 'block';
+box.style.display = willOpen ? 'block' : 'none';
+if (!willOpen) return;
+tip('');
 if (mode === 'reg') {
-const saved = localStorage.getItem(LS_ACC);
-if (!saved) localStorage.setItem(LS_ACC, JSON.stringify({ username: randId(), password: randPw() }));
+const left = regCooldownLeft();
+const acc0 = loadAcc();
+if (left > 0 && acc0.username) {
+authMode = 'login';
+tip('本机已有账号 ' + acc0.username + '，自动切到登录（填一次验证码即可）');
+await loadCaptcha();
+return;
+}
+const acc = loadAcc();
+if (!acc.username) saveAcc({ username: randId(), password: randPw() });
+tip('算出图片里的算术题 → 点确定，注册成功后会自动登录（无需再点登录）');
+} else {
+const acc = loadAcc();
+tip(acc.username ? '用本机保存的账号 ' + acc.username + ' 登录，只需填一次验证码' : '本机还没有账号，请先点「自动注册小号」');
 }
 await loadCaptcha();
 }
@@ -428,35 +472,61 @@ try {
 capData = await getCaptcha();
 $('#unlock-capimg').src = capData.img;
 $('#unlock-capcode').value = '';
-$('#unlock-authtip').textContent = authMode === 'reg'
-? '算出图片里的算术题，点确定即自动注册并登录'
-: '输入密码后算出算术题（账号沿用上次注册的）';
 } catch (e) {
-toast(String(e.message || e), 'err');
+tip('验证码加载失败：' + (e.message || e), 'err');
 }
+}
+/** 拿到 token 后立刻校验，成功则刷新页面让站点自身也进入登录态 */
+async function finishAuth(okMsg) {
+for (let i = 0; i < 3; i++) {
+const u = await whoami();
+if (u) {
+tip('✔ ' + okMsg + '：' + (u.nickname || u.username), 'ok');
+toast('✔ ' + okMsg + '，即将刷新页面', 'ok');
+await refreshMeta();
+setTimeout(() => location.reload(), 900);
+return true;
+}
+await sleep(700);
+}
+tip('已拿到凭证但校验失败（站点可能限制新号）。稍后点「登录」再试一次。', 'err');
+return false;
 }
 function bindAuth() {
-document.addEventListener('click', async (e) => {
-if (e.target.id === 'unlock-capimg') { loadCaptcha(); return; }
-if (e.target.id !== 'unlock-authgo') return;
+document.addEventListener('click', async (ev) => {
+if (ev.target.id === 'unlock-capimg') { loadCaptcha(); return; }
+if (ev.target.id !== 'unlock-authgo') return;
+if (authBusy) return;
 const code = ($('#unlock-capcode').value || '').trim();
-if (!code || !capData) { toast('先填验证码', 'err'); return; }
-const acc = JSON.parse(localStorage.getItem(LS_ACC) || '{}');
+if (!code || !capData) { tip('先填验证码答案', 'err'); return; }
+authBusy = true;
+const btn = $('#unlock-authgo');
+btn.disabled = true;
+const acc = loadAcc();
 try {
 if (authMode === 'reg') {
-await doRegister(acc.username, acc.password, acc.username + '@mailinator.com', code, capData.key);
-toast('✔ 注册成功，账号已存本地', 'ok');
+tip('注册中…');
+const username = acc.username || randId();
+const password = acc.password || randPw();
+const email = username + '@mailinator.com';
+await doRegister(username, password, email, code, capData.key);
+saveAcc({ username, password, email, at: Date.now() });
+localStorage.setItem(LS_LASTREG, String(Date.now()));
+await finishAuth('注册成功并已登录');
 } else {
-const pw = prompt('输入 ' + acc.username + ' 的密码');
-if (!pw) return;
-await doLogin(acc.username, pw, code, capData.key);
-toast('✔ 登录成功', 'ok');
+if (!acc.username || !acc.password) throw new Error('本机没有可用账号，请先自动注册');
+tip('登录中…');
+await doLogin(acc.username, acc.password, code, capData.key);
+await finishAuth('登录成功');
 }
 $('#unlock-auth').style.display = 'none';
-await refreshMeta();
 } catch (err) {
-toast(String(err.message || err), 'err');
-await loadCaptcha();
+tip('✘ ' + (err.message || err), 'err');
+toast(String(err.message || err), 'err', 4000);
+await loadCaptcha();          // 失败后自动换一张，输入框保留在页面上
+} finally {
+authBusy = false;
+btn.disabled = false;
 }
 });
 }
