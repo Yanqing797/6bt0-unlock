@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.3.3
+// @version      1.3.4
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载（会员解锁已于 2026-11-09 被站点修复）
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -98,8 +98,9 @@
 
   /* ────────────────────────── API ────────────────────────── */
   async function api(path, { params = {}, token = tok(), method = 'GET', body } = {}) {
-    if (cooling()) {
-      return { code: -4, message: '正在冷却中，请稍候' };
+    const AUTH_PATH = /^(getCaptcha|login|reg|getInfo|modifyPassword|resetpass|verifyResetCode)/.test(path);
+    if (cooling() && !AUTH_PATH) {
+      return { code: -4, message: '正在冷却中（被站点风控），稍候再试' };
     }
     if (budget() > HOURLY_BUDGET) {
       return { code: -2, message: '本小时请求数已达上限（120），为降低被风控概率已暂停，稍后再试' };
@@ -124,8 +125,14 @@
       } catch {
         // 返回了 HTML / 非 JSON：基本就是 WAF 挑战页或被风控
         if (r.status === 429 || r.status === 403 || r.status === 503 || /^\s*</.test(txt)) {
-          startCooldown(90);
-          return { code: -5, message: '被站点风控拦截（HTTP ' + r.status + '），已冷却 90 秒' };
+          const isData = /^(getTList|getVideoDetail|getTrDetail|getVideoList)/.test(path);
+          if (isData) startCooldown(90);
+          return {
+            code: -5,
+            message: isData
+              ? '被站点风控拦截（HTTP ' + r.status + '），已冷却 90 秒'
+              : '站点返回异常页面（HTTP ' + r.status + '），稍后重试',
+          };
         }
         return { code: r.status, message: txt.slice(0, 160) };
       }
@@ -505,8 +512,17 @@
           try {
             const { title, year, rows } = await fetchLinks(ids[i]);
             all = all.concat(rows.map((r) => ({ ...r, title: `${title}${year ? '(' + year + ')' : ''}` })));
-          } catch (e) { /* 跳过失败 */ }
-          await sleep(400);
+          } catch (e) {
+            const msg = String((e && e.message) || e);
+            if (/冷却|上限|风控|拦截/.test(msg)) {
+              logStep('');
+              busy('unlock-batchgo', false);
+              toast('已停止：' + msg, 'err', 6000);
+              render('已处理 ' + i + '/' + ids.length + ' 部（提前停止）', all);
+              return;
+            }
+          }
+          await sleep(600 + Math.random() * 500);
         }
         logStep('');
         busy('unlock-batchgo', false);
