@@ -155,7 +155,16 @@ box.querySelectorAll('[data-open]').forEach((a) => {
 a.onclick = (e) => {
 e.preventDefault();
 const it = TL.rows[Number(a.dataset.open)];
-if (it && it.down) window.open(location.origin + it.down, '_blank', 'noopener');
+if (!it) return;
+const url = it.zlink || (it.down ? location.origin + it.down : '');
+if (!url) { toast('这条没有可用链接', 'err'); return; }
+const link = document.createElement('a');
+link.href = url;
+link.target = '_blank';
+link.rel = 'noopener noreferrer';
+document.body.appendChild(link);
+link.click();
+link.remove();
 };
 });
 }

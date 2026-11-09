@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.2.0
+// @version      1.2.1
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载（会员解锁已于 2026-11-09 被站点修复）
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -190,7 +190,17 @@
       a.onclick = (e) => {
         e.preventDefault();
         const it = TL.rows[Number(a.dataset.open)];
-        if (it && it.down) window.open(location.origin + it.down, '_blank', 'noopener');
+        if (!it) return;
+        // down 会 302 到 magnet/网盘协议，用真实 a 标签点击最稳（window.open 常被弹窗拦截）
+        const url = it.zlink || (it.down ? location.origin + it.down : '');
+        if (!url) { toast('这条没有可用链接', 'err'); return; }
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
       };
     });
   }
