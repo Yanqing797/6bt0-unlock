@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.1.0
-// @description  6bt0 / 0bt0~9bt0 网盘直链批量导出（会员解锁已于 2026-11-09 被站点修复，仅作记录）
+// @version      1.2.0
+// @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载（会员解锁已于 2026-11-09 被站点修复）
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
 // @supportURL   https://github.com/Yanqing797/6bt0-unlock/issues
@@ -167,6 +167,34 @@
     return { title: d.title || idcode, year: d.years || '', rows };
   }
 
+  /* ── 最新资源列表（getTList：需 VIP=0 的免费资源，每条带 down 下载页）── */
+  const TL = { sc: 1, page: 1, rows: [] };
+
+  async function loadTList(sc, page) {
+    TL.sc = sc; TL.page = page;
+    const box = $('#unlock-tlist-rows');
+    box.innerHTML = '<div>加载中…</div>';
+    const r = await api('getTList', { params: { sc, page, limit: 20 } });
+    if (r.code !== 200) { box.innerHTML = '<div>加载失败：' + (r.message || r.code) + '</div>'; return; }
+    const rows = (r.data && r.data.list) || [];
+    TL.rows = rows;
+    if (!rows.length) { box.innerHTML = '<div>没有更多了（第 ' + page + ' 页）</div>'; return; }
+    box.innerHTML = rows.map((it, i) => {
+      const name = String(it.zname || it.title || '').slice(0, 48);
+      const meta = [it.zsize, (it.ezt || '').slice(0, 10), it.need_vip ? 'VIP' : '免费'].filter(Boolean).join(' · ');
+      return '<div data-i="' + i + '" style="padding:5px 0">' + name
+        + '<br><span style="color:#5d6878">' + meta + '</span> '
+        + '<a href="#" data-open="' + i + '" style="color:#4d8bff;margin-left:6px">下载</a></div>';
+    }).join('');
+    box.querySelectorAll('[data-open]').forEach((a) => {
+      a.onclick = (e) => {
+        e.preventDefault();
+        const it = TL.rows[Number(a.dataset.open)];
+        if (it && it.down) window.open(location.origin + it.down, '_blank', 'noopener');
+      };
+    });
+  }
+
   function download(name, text) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
@@ -180,7 +208,8 @@
   #unlock-panel{position:fixed;right:18px;bottom:18px;z-index:2147483000;width:min(290px,calc(100vw - 32px));
     font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
     color:#e8ecf3;background:#151a23;border:1px solid #2a3342;border-radius:12px;
-    box-shadow:0 12px 32px rgba(0,0,0,.45);overflow:hidden;user-select:none}
+    box-shadow:0 12px 32px rgba(0,0,0,.45);overflow:hidden;user-select:none;
+    max-height:calc(100vh - 36px);display:flex;flex-direction:column}
   #unlock-panel.min .unlock-body{display:none}
   .unlock-head{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:move;
     background:linear-gradient(135deg,#1b2330,#141a24);border-bottom:1px solid #232c3a}
@@ -190,7 +219,7 @@
   .unlock-head .sp{flex:1}
   .unlock-min{cursor:pointer;opacity:.6;padding:0 4px}
   .unlock-min:hover{opacity:1}
-  .unlock-body{padding:12px}
+  .unlock-body{padding:12px;overflow-y:auto;overscroll-behavior:contain}
   .unlock-row{display:flex;gap:8px;margin-bottom:8px}
   .unlock-btn{flex:1;padding:9px 10px;border-radius:8px;border:1px solid #2f3a4c;background:#1e2634;
     color:#dfe6f0;cursor:pointer;font-size:12.5px;transition:.15s;white-space:nowrap}
@@ -244,6 +273,22 @@
         <div class="unlock-row">
           <button class="unlock-btn" id="unlock-export">导出本页直链</button>
           <button class="unlock-btn" id="unlock-batch">批量导出</button>
+        </div>
+        <div class="unlock-row">
+          <button class="unlock-btn" id="unlock-tlist">最新资源列表</button>
+        </div>
+        <div id="unlock-tlistbox" style="display:none">
+          <div class="unlock-row" style="margin:2px 0 6px">
+            <button class="unlock-btn" data-sc="1">电影</button>
+            <button class="unlock-btn" data-sc="2">剧集</button>
+            <button class="unlock-btn" data-sc="3">热门</button>
+          </div>
+          <div class="unlock-list" id="unlock-tlist-rows" style="max-height:230px"></div>
+          <div class="unlock-row" style="margin-top:6px">
+            <button class="unlock-btn" id="unlock-tlist-prev">上一页</button>
+            <button class="unlock-btn" id="unlock-tlist-next">下一页</button>
+            <button class="unlock-btn" id="unlock-tlist-copy">复制全部</button>
+          </div>
         </div>
         <div class="unlock-sep"></div>
         <div class="unlock-row">
@@ -303,6 +348,24 @@
     $('#unlock-batchgo').onclick = () => run('batch');
     $('#unlock-reg').onclick = () => auth('reg');
     $('#unlock-login').onclick = () => auth('login');
+
+    // 最新资源列表
+    $('#unlock-tlist').onclick = () => {
+      const b = $('#unlock-tlistbox');
+      b.style.display = b.style.display === 'none' ? 'block' : 'none';
+      if (b.style.display === 'block' && !TL.rows.length) loadTList(1, 1).catch(e => toast(String(e.message || e), 'err'));
+    };
+    p.querySelectorAll('[data-sc]').forEach((btn) => {
+      btn.onclick = () => loadTList(Number(btn.dataset.sc), 1).catch(e => toast(String(e.message || e), 'err'));
+    });
+    $('#unlock-tlist-prev').onclick = () => loadTList(TL.sc, Math.max(1, TL.page - 1)).catch(() => {});
+    $('#unlock-tlist-next').onclick = () => loadTList(TL.sc, TL.page + 1).catch(() => {});
+    $('#unlock-tlist-copy').onclick = async () => {
+      const links = TL.rows.filter(r => r.down).map(r => location.origin + r.down).join('\n');
+      if (!links) { toast('当前没有可复制的链接', 'err'); return; }
+      try { await navigator.clipboard.writeText(links); toast('已复制 ' + TL.rows.length + ' 条下载链接', 'ok'); }
+      catch { toast('复制失败，请手动选择', 'err'); }
+    };
 
     refreshMeta();
   }

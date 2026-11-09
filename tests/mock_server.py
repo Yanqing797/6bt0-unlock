@@ -119,6 +119,21 @@ class H(BaseHTTPRequestHandler):
                 STATE["orders"][oid] = "pending"
                 return self._json({"code": 200, "data": {"order_id": oid, "url": "https://pay.example/mock"}})
 
+            if ep == "getTList":
+                sc = q.get("sc", "1")
+                page = int(q.get("page", "1") or 1)
+                rows = [{
+                    "id": 840229 - i,
+                    "title": f"示例影片 {sc}-{page}-{i}",
+                    "zname": f"示例影片 {sc}-{page}-{i} [4K].WEB-DL.mkv",
+                    "zsize": f"{3 + i}.4{i} GB",
+                    "ezt": "2026-11-0%d" % (i % 9 + 1),
+                    "need_vip": 0,
+                    "zlink": "",
+                    "down": f"/prod/api/v1/down?app_id=83768d9ad4&lx=1&id=demo-{sc}-{page}-{i}",
+                } for i in range(8)]
+                return self._json({"code": 200, "data": {"list": rows, "page": page, "total": 999}})
+
             if ep == "getVideoDetail":
                 v = json.loads(json.dumps(VIDEO))
                 for k, arr in v["movies_online_seed"].items():
