@@ -52,15 +52,16 @@ return Math.max(0, 24 * 3600e3 - (Date.now() - t));
 }
 /* ────────────────────────── 失败冷却 ────────────────────────── */
 let cooldownUntil = 0;
-const cooldowns = [];
 const cooling = () => Date.now() < cooldownUntil;
+let coolTimer = null;
 function startCooldown(sec) {
-cooldownUntil = Date.now() + sec * 1000;
+cooldownUntil = Math.max(cooldownUntil, Date.now() + sec * 1000);
+if (coolTimer) clearTimeout(coolTimer);
 const tick = () => {
 const left = Math.ceil((cooldownUntil - Date.now()) / 1000);
 if (left > 0) {
 logStep('触发站点风控，冷却 ' + left + ' 秒后再试（这段时间别点按钮）');
-setTimeout(tick, 1000);
+coolTimer = setTimeout(tick, 1000);
 } else {
 logStep('');
 }
@@ -90,12 +91,25 @@ const timer = setTimeout(() => ctrl.abort(), 15000);
 try {
 const r = await fetch(API + path.replace(/^\//, '') + '?' + q.toString(), { ...opt, signal: ctrl.signal });
 const txt = await r.text();
-try { return JSON.parse(txt); } catch { return { code: r.status, message: txt.slice(0, 160) }; }
+try {
+return JSON.parse(txt);
+} catch {
+if (r.status === 429 || r.status === 403 || r.status === 503 || /^\s*</.test(txt)) {
+startCooldown(90);
+return { code: -5, message: '被站点风控拦截（HTTP ' + r.status + '），已冷却 90 秒' };
+}
+return { code: r.status, message: txt.slice(0, 160) };
+}
 } catch (e) {
 const abort = String(e && e.name) === 'AbortError';
-if (!cooldowns.includes(path)) cooldowns.push(path);
-startCooldown(60);
-return { code: abort ? -3 : -1, message: abort ? '请求超时（站点在限流），已自动冷却 60 秒' : '网络被重置（站点风控），已自动冷却 60 秒' };
+const dataPath = /^(getTList|getVideoDetail|getTrDetail|getVideoList)/.test(path);
+if (dataPath) startCooldown(60);
+return {
+code: abort ? -3 : -1,
+message: dataPath
+? (abort ? '请求超时（站点在限流），已自动冷却 60 秒' : '网络被重置（站点风控），已自动冷却 60 秒')
+: (abort ? '请求超时，稍后重试' : '网络异常，稍后重试'),
+};
 } finally {
 clearTimeout(timer);
 }

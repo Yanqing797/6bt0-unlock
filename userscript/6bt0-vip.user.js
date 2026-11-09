@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.3.2
+// @version      1.3.3
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载（会员解锁已于 2026-11-09 被站点修复）
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -79,15 +79,16 @@
 
   /* ────────────────────────── 失败冷却 ────────────────────────── */
   let cooldownUntil = 0;
-  const cooldowns = [];
   const cooling = () => Date.now() < cooldownUntil;
+  let coolTimer = null;
   function startCooldown(sec) {
-    cooldownUntil = Date.now() + sec * 1000;
+    cooldownUntil = Math.max(cooldownUntil, Date.now() + sec * 1000);
+    if (coolTimer) clearTimeout(coolTimer);
     const tick = () => {
       const left = Math.ceil((cooldownUntil - Date.now()) / 1000);
       if (left > 0) {
         logStep('触发站点风控，冷却 ' + left + ' 秒后再试（这段时间别点按钮）');
-        setTimeout(tick, 1000);
+        coolTimer = setTimeout(tick, 1000);
       } else {
         logStep('');
       }
@@ -118,12 +119,27 @@
     try {
       const r = await fetch(API + path.replace(/^\//, '') + '?' + q.toString(), { ...opt, signal: ctrl.signal });
       const txt = await r.text();
-      try { return JSON.parse(txt); } catch { return { code: r.status, message: txt.slice(0, 160) }; }
+      try {
+        return JSON.parse(txt);
+      } catch {
+        // 返回了 HTML / 非 JSON：基本就是 WAF 挑战页或被风控
+        if (r.status === 429 || r.status === 403 || r.status === 503 || /^\s*</.test(txt)) {
+          startCooldown(90);
+          return { code: -5, message: '被站点风控拦截（HTTP ' + r.status + '），已冷却 90 秒' };
+        }
+        return { code: r.status, message: txt.slice(0, 160) };
+      }
     } catch (e) {
       const abort = String(e && e.name) === 'AbortError';
-      if (!cooldowns.includes(path)) cooldowns.push(path);
-      startCooldown(60);
-      return { code: abort ? -3 : -1, message: abort ? '请求超时（站点在限流），已自动冷却 60 秒' : '网络被重置（站点风控），已自动冷却 60 秒' };
+      // 只有"取数据"的接口失败才冷却；登录/验证码/用户信息失败不锁面板，否则一次超时就把人锁死
+      const dataPath = /^(getTList|getVideoDetail|getTrDetail|getVideoList)/.test(path);
+      if (dataPath) startCooldown(60);
+      return {
+        code: abort ? -3 : -1,
+        message: dataPath
+          ? (abort ? '请求超时（站点在限流），已自动冷却 60 秒' : '网络被重置（站点风控），已自动冷却 60 秒')
+          : (abort ? '请求超时，稍后重试' : '网络异常，稍后重试'),
+      };
     } finally {
       clearTimeout(timer);
     }
