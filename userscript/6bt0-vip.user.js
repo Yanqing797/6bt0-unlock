@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.3.4
+// @version      1.4.0
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载（会员解锁已于 2026-11-09 被站点修复）
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -19,6 +19,8 @@
 
 (function () {
   'use strict';
+  if (window.__6bt0UnlockLoaded) return;
+  window.__6bt0UnlockLoaded = true;
 
   /* ────────────────────────── 常量 ────────────────────────── */
   const FIX = { app_id: '83768d9ad4', identity: '23734adac0301bccdcb107c4aa21f96c' };
@@ -35,6 +37,16 @@
 
   /* ────────────────────────── 工具 ────────────────────────── */
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const safeHref = (u) => {
+    try {
+      const x = new URL(String(u || ''), location.href);
+      return /^(https?|magnet):$/.test(x.protocol) ? x.href : '';
+    } catch { return ''; }
+  };
+  const isVip = (u) => !!u && (Number(u.is_vip) === 2 || Number(u.is_permanent_vip) === 1
+    || String(u.vip_type) === '4');
   const $ = (sel, root = document) => root.querySelector(sel);
   const tok = () => localStorage.getItem(LS_TOKEN) || '';
   const randId = () => 'u' + Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 4);
@@ -66,7 +78,9 @@
     const now = Date.now();
     let b = {};
     try { b = JSON.parse(localStorage.getItem(LS_BUDGET) || '{}'); } catch {}
-    if (!b.t || now - b.t > 3600e3) b = { t: now, n: 0 };
+    if (!b || typeof b !== 'object' || !Number.isFinite(b.t) || !Number.isFinite(b.n) || now - b.t > 3600e3) {
+      b = { t: now, n: 0 };
+    }
     b.n += 1;
     localStorage.setItem(LS_BUDGET, JSON.stringify(b));
     return b.n;
@@ -74,6 +88,7 @@
 
   function regCooldownLeft() {
     const t = Number(localStorage.getItem(LS_LASTREG) || 0);
+    if (!Number.isFinite(t) || t <= 0) return 0;
     return Math.max(0, 24 * 3600e3 - (Date.now() - t));
   }
 
@@ -118,8 +133,9 @@
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 15000);
     try {
-      const r = await fetch(API + path.replace(/^\//, '') + '?' + q.toString(), { ...opt, signal: ctrl.signal });
+      const r = await fetch(API + path.replace(/^\//, '') + '?' + q.toString(), { ...opt, signal: ctrl.signal, cache: 'no-store' });
       const txt = await r.text();
+      if (!txt || !txt.trim()) return { code: -6, message: '空响应（可能被风控），稍后重试' };
       try {
         return JSON.parse(txt);
       } catch {
@@ -198,8 +214,10 @@
       token: '',
     });
     if (r.code === 200) {
-      if (r.data && r.data.access_token) localStorage.setItem(LS_TOKEN, r.data.access_token);
-      return true;
+      const t = r.data && r.data.access_token;
+      if (t) { localStorage.setItem(LS_TOKEN, t); return true; }
+      localStorage.removeItem(LS_TOKEN);   // 注册成功但没给 token：不能沿用旧账号的 token
+      return false;
     }
     throw new Error(r.message || '注册失败');
   }
@@ -230,12 +248,16 @@
   }
 
   async function fetchLinks(idcode) {
-    const r = await api('getVideoDetail', { params: { id: idcode }, token: tok() });
+    let r = await api('getVideoDetail', { params: { id: idcode } });
+    if ([10103, 10104].includes(Number(r.code)) && tok()) {
+      r = await api('getVideoDetail', { params: { id: idcode }, token: '' });   // token 失效则匿名重试
+    }
     if (r.code !== 200 || !r.data) throw new Error(r.message || '获取失败');
     const d = r.data;
     const rows = [];
     for (const k in (d.movies_online_seed || {})) {
       for (const it of (d.movies_online_seed[k] || [])) {
+        if (!it || typeof it !== 'object') continue;
         if (it.link) rows.push({
           type: TYPE_NAME[k] || k, name: it.seed_name || '', link: it.link, code: it.code || '',
         });
@@ -247,23 +269,31 @@
   /* ── 最新资源列表（getTList：需 VIP=0 的免费资源，每条带 down 下载页）── */
   const TL = { sc: 1, page: 1, rows: [] };
 
+  let TLseq = 0;
   async function loadTList(sc, page) {
-    TL.sc = sc; TL.page = page;
+    const seq = ++TLseq;
     const box = $('#unlock-tlist-rows');
+    if (!box) return;
     box.innerHTML = '<div>加载中…</div>';
     const r = await api('getTList', { params: { sc, page, limit: 10 } });
+    if (seq !== TLseq) return;                       // 有更新的请求了，丢弃旧响应
     if (r.code !== 200) {
-      box.innerHTML = '<div style="color:#f53f3f">加载失败：' + (r.message || r.code)
+      TL.rows = [];
+      box.innerHTML = '<div style="color:#f53f3f">加载失败：' + esc(r.message || r.code)
         + '<br><span style="color:#5d6878">站点有频率限制，等 10~30 分钟再试；别连续点。</span></div>';
       return;
     }
-    const rows = (r.data && r.data.list) || [];
-    TL.rows = rows;
+    const rows = Array.isArray(r.data && r.data.list) ? r.data.list : [];
+    TL.sc = sc; TL.page = page; TL.rows = rows;
+    const prev = $('#unlock-tlist-prev'), next = $('#unlock-tlist-next');
+    if (prev) prev.disabled = page <= 1;
+    if (next) next.disabled = rows.length < 10;
     if (!rows.length) { box.innerHTML = '<div>没有更多了（第 ' + page + ' 页）</div>'; return; }
     box.innerHTML = rows.map((it, i) => {
-      const name = String(it.zname || it.title || '').slice(0, 48);
-      const meta = [it.zsize, (it.ezt || '').slice(0, 10), it.need_vip ? 'VIP' : '免费'].filter(Boolean).join(' · ');
-      return '<div data-i="' + i + '" style="padding:5px 0">' + name
+      const name = esc(String(it.zname || it.title || '').slice(0, 48));
+      const meta = [it.zsize, String(it.ezt || '').slice(0, 10), Number(it.need_vip) === 1 ? 'VIP' : '免费']
+        .filter(Boolean).map(esc).join(' · ');
+      return '<div style="padding:5px 0">' + name
         + '<br><span style="color:#5d6878">' + meta + '</span> '
         + '<a href="#" data-open="' + i + '" style="color:#4d8bff;margin-left:6px">下载</a></div>';
     }).join('');
@@ -273,7 +303,7 @@
         const it = TL.rows[Number(a.dataset.open)];
         if (!it) return;
         // down 会 302 到 magnet/网盘协议，用真实 a 标签点击最稳（window.open 常被弹窗拦截）
-        const url = it.zlink || (it.down ? location.origin + it.down : '');
+        const url = safeHref(it.zlink || it.down || '');
         if (!url) { toast('这条没有可用链接', 'err'); return; }
         const link = document.createElement('a');
         link.href = url;
@@ -287,11 +317,14 @@
   }
 
   function download(name, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
-    a.download = name;
+    a.href = url;
+    a.download = name.replace(/\.txt$/, '') + '-' + Date.now() + '.txt';
+    document.body.appendChild(a);
     a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 
   /* ────────────────────────── UI ────────────────────────── */
@@ -334,7 +367,7 @@
   .unlock-list div{padding:3px 0;border-bottom:1px dashed #222b38;word-break:break-all}
   .unlock-list a{color:#4d8bff;text-decoration:none}
   .unlock-tip{font-size:11px;color:#5d6878;margin-top:8px;line-height:1.45}
-  .unlock-toast{position:fixed;right:18px;bottom:330px;z-index:2147483001;max-width:320px;
+  .unlock-toast{position:fixed;right:18px;top:18px;z-index:2147483001;max-width:320px;
     padding:10px 14px;border-radius:8px;font-size:13px;color:#fff;background:#1e2634;
     border:1px solid #2f3a4c;box-shadow:0 8px 24px rgba(0,0,0,.4);transition:opacity .4s}
   .unlock-toast.ok{background:#0d3320;border-color:#1f6b3f}
@@ -385,6 +418,9 @@
         <div class="unlock-row">
           <button class="unlock-btn ghost" id="unlock-reg">自动注册小号</button>
           <button class="unlock-btn ghost" id="unlock-login">登录</button>
+        </div>
+        <div class="unlock-row">
+          <button class="unlock-btn ghost" id="unlock-reset" title="清掉本机保存的账号和登录凭证，重新开始">重置本机账号</button>
         </div>
         <div id="unlock-auth" style="display:none">
           <div class="unlock-cap">
@@ -449,8 +485,22 @@
     p.querySelectorAll('[data-sc]').forEach((btn) => {
       btn.onclick = () => loadTList(Number(btn.dataset.sc), 1).catch(e => toast(String(e.message || e), 'err'));
     });
-    $('#unlock-tlist-prev').onclick = () => loadTList(TL.sc, Math.max(1, TL.page - 1)).catch(() => {});
-    $('#unlock-tlist-next').onclick = () => loadTList(TL.sc, TL.page + 1).catch(() => {});
+    $('#unlock-tlist-prev').onclick = () => {
+      if (TL.page <= 1) return;
+      loadTList(TL.sc, TL.page - 1).catch(() => {});
+    };
+    $('#unlock-tlist-next').onclick = () => {
+      loadTList(TL.sc, TL.page + 1).catch(() => {});
+    };
+    $('#unlock-reset').onclick = () => {
+      localStorage.removeItem(LS_ACC);
+      localStorage.removeItem(LS_LASTREG);
+      localStorage.removeItem(LS_TOKEN);
+      authMode = 'reg';
+      $('#unlock-auth').style.display = 'block';
+      tip('已清除本机账号与登录态，可以重新自动注册', 'ok');
+      refreshMeta();
+    };
     $('#unlock-tlist-copy').onclick = async () => {
       const links = TL.rows.filter(r => r.down).map(r => location.origin + r.down).join('\n');
       if (!links) { toast('当前没有可复制的链接', 'err'); return; }
@@ -463,26 +513,28 @@
 
   async function refreshMeta() {
     const meta = $('#unlock-meta'), dot = $('#unlock-dot');
-    const u = await whoami();
+    if (!meta) return;
+    let u = null;
+    try { u = await whoami(); } catch { u = null; }
     if (!u) {
-      dot.classList.remove('on');
-      const saved = localStorage.getItem(LS_ACC);
-      meta.innerHTML = saved
-        ? `未登录 · 已保存账号 <b>${JSON.parse(saved).username}</b>`
+      dot && dot.classList.remove('on');
+      const acc = loadAcc();
+      meta.innerHTML = acc && acc.username
+        ? `未登录 · 已保存账号 <b>${esc(acc.username)}</b>`
         : '未登录（点下面自动注册）';
       return;
     }
-    const vip = Number(u.is_vip) === 2 || Number(u.is_permanent_vip) === 1;
-    dot.classList.toggle('on', vip);
-    meta.innerHTML = `<b>${u.nickname || u.username}</b> · ${vip ? '会员 ✔' : '普通用户'}`
-      + (u.vip_expire_at ? `<br>到期 <b>${u.vip_expire_at}</b>` : '');
+    const vip = isVip(u);
+    dot && dot.classList.toggle('on', vip);
+    meta.innerHTML = `<b>${esc(u.nickname || u.username)}</b> · ${vip ? '会员 ✔' : '普通用户'}`
+      + (u.vip_expire_at ? `<br>到期 <b>${esc(u.vip_expire_at)}</b>` : '');
   }
 
   /* ────────────────────────── 动作 ────────────────────────── */
   const busy = (id, on) => { const b = $('#' + id); if (b) b.disabled = on; };
 
   async function run(kind) {
-    if (!tok()) { toast('请先注册/登录', 'err'); return; }
+    if (kind === 'vip' && !tok()) { toast('请先注册/登录', 'err'); return; }
     try {
       if (kind === 'vip') {
         busy('unlock-vip', true);
@@ -496,15 +548,18 @@
                 + '当前仍可点「导出本页直链」拿公开直链。', 'err', 6000);
         }
       } else if (kind === 'export') {
-        const m = location.pathname.match(/\/mv\/(\d+)/) || location.pathname.match(/\/tv\/(\d+)/);
+        const m = (location.pathname + location.hash).match(/\/(?:mv|tv|detail|video)\/(\d+)/);
         if (!m) { toast('请在影片详情页使用', 'err'); return; }
         busy('unlock-export', true);
+        logStep('抓取直链…');
         const { title, rows } = await fetchLinks(m[1]);
+        logStep('');
         busy('unlock-export', false);
         render(title, rows);
       } else if (kind === 'batch') {
-        const ids = ($('#unlock-ids').value || '').split(/[\s,，]+/).filter(Boolean);
-        if (!ids.length) { toast('填几个 idcode', 'err'); return; }
+        const raw = ($('#unlock-ids').value || '').split(/[\s,，]+/).filter(Boolean);
+        const ids = [...new Set(raw.map((x) => (String(x).match(/\d{4,}/) || [''])[0]).filter(Boolean))].slice(0, 50);
+        if (!ids.length) { toast('填几个 idcode（网址里 /mv/ 后面那串数字）', 'err'); return; }
         busy('unlock-batchgo', true);
         let all = [];
         for (let i = 0; i < ids.length; i++) {
@@ -539,12 +594,15 @@
     const box = $('#unlock-result');
     box.style.display = 'block';
     if (!rows.length) { box.innerHTML = '<div>没有拿到直链（可能没会员/该片无网盘资源）</div>'; return; }
-    box.innerHTML = `<div style="color:#c9d4e3;margin-bottom:6px">${title} · ${rows.length} 条</div>`
-      + rows.slice(0, 200).map((r) =>
-        `<div>[${r.type}] ${r.name.slice(0, 34)}<br><a href="${r.link}" target="_blank" rel="noreferrer">${r.link}</a>`
-        + (r.code ? ` 码:${r.code}` : '') + '</div>').join('');
+    box.innerHTML = `<div style="color:#c9d4e3;margin-bottom:6px">${esc(title)} · ${rows.length} 条</div>`
+      + rows.slice(0, 200).map((r) => {
+        const href = safeHref(r.link);
+        return `<div>[${esc(r.type)}] ${esc(String(r.name).slice(0, 34))}<br>`
+          + (href ? `<a href="${esc(href)}" target="_blank" rel="noreferrer">${esc(href)}</a>` : esc(r.link))
+          + (r.code ? ` 码:${esc(r.code)}` : '') + '</div>';
+      }).join('');
     const txt = rows.map((r) => `${r.type}\t${r.name}\t${r.link}\t${r.code || ''}`).join('\n');
-    navigator.clipboard && navigator.clipboard.writeText(txt).catch(() => {});
+    if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(() => {});
     download('6bt0-links.txt', txt);
     toast(`✔ ${rows.length} 条直链已复制并下载`, 'ok');
   }
@@ -581,8 +639,9 @@
         await loadCaptcha();
         return;
       }
-      const acc = loadAcc();
-      if (!acc.username) saveAcc({ username: randId(), password: randPw() });
+      // 冷却已过：每次都生成全新身份，避免复用旧用户名撞“已存在”
+      const uname = randId();
+      saveAcc({ username: uname, password: randPw(), email: uname + '@mailinator.com' });
       tip('算出图片里的算术题 → 点确定，注册成功后会自动登录（无需再点登录）');
     } else {
       const acc = loadAcc();
@@ -602,10 +661,13 @@
   }
 
   /** 拿到 token 后立刻校验，成功则刷新页面让站点自身也进入登录态 */
-  async function finishAuth(okMsg) {
+  async function finishAuth(okMsg, expected) {
     for (let i = 0; i < 3; i++) {
       const u = await whoami();
-      if (u) {
+      // 不再要求用户名完全相等：站点可能对用户名做归一化。
+      // 只要拿到有效用户且 token 已改写，就认为登录成功。
+      const same = !expected || String(u && u.username || '').toLowerCase() === String(expected).toLowerCase();
+      if (u && (same || tok())) {
         tip('✔ ' + okMsg + '：' + (u.nickname || u.username), 'ok');
         toast('✔ ' + okMsg + '，即将刷新页面', 'ok');
         await refreshMeta();
@@ -638,15 +700,27 @@
           const username = acc.username || randId();
           const password = acc.password || randPw();
           const email = username + '@mailinator.com';
-          await doRegister(username, password, email, code, capData.key);
+          const logged = await doRegister(username, password, email, code, capData.key);
           saveAcc({ username, password, email, at: Date.now() });
           localStorage.setItem(LS_LASTREG, String(Date.now()));
-          await finishAuth('注册成功并已登录');
+          if (!logged) {
+            authMode = 'login';
+            tip('注册成功但没有返回登录凭证，请再填一次验证码登录', 'err');
+            await loadCaptcha();
+            return;
+          }
+          const ok = await finishAuth('注册成功并已登录', username);
+          if (!ok) {
+            tip('注册成功，但登录校验没通过；请点「登录」重试', 'err');
+            toast('自动登录校验失败，请点「登录」重试', 'err', 5000);
+            return;                       // 保持面板打开
+          }
         } else {
-          if (!acc.username || !acc.password) throw new Error('本机没有可用账号，请先自动注册');
+          if (!acc.username || !acc.password) throw new Error('本机没有可用账号，请先点「自动注册小号」或「重置本机账号」');
           tip('登录中…');
           await doLogin(acc.username, acc.password, code, capData.key);
-          await finishAuth('登录成功');
+          const ok = await finishAuth('登录成功', acc.username);
+          if (!ok) { tip('登录未通过校验，请重试或重置本机账号', 'err'); return; }
         }
         $('#unlock-auth').style.display = 'none';
       } catch (err) {
