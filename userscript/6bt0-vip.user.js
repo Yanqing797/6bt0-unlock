@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.3.1
+// @version      1.3.2
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载（会员解锁已于 2026-11-09 被站点修复）
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -77,8 +77,29 @@
     return Math.max(0, 24 * 3600e3 - (Date.now() - t));
   }
 
+  /* ────────────────────────── 失败冷却 ────────────────────────── */
+  let cooldownUntil = 0;
+  const cooldowns = [];
+  const cooling = () => Date.now() < cooldownUntil;
+  function startCooldown(sec) {
+    cooldownUntil = Date.now() + sec * 1000;
+    const tick = () => {
+      const left = Math.ceil((cooldownUntil - Date.now()) / 1000);
+      if (left > 0) {
+        logStep('触发站点风控，冷却 ' + left + ' 秒后再试（这段时间别点按钮）');
+        setTimeout(tick, 1000);
+      } else {
+        logStep('');
+      }
+    };
+    tick();
+  }
+
   /* ────────────────────────── API ────────────────────────── */
   async function api(path, { params = {}, token = tok(), method = 'GET', body } = {}) {
+    if (cooling()) {
+      return { code: -4, message: '正在冷却中，请稍候' };
+    }
     if (budget() > HOURLY_BUDGET) {
       return { code: -2, message: '本小时请求数已达上限（120），为降低被风控概率已暂停，稍后再试' };
     }
@@ -86,6 +107,7 @@
     const q = new URLSearchParams({ ...FIX, ...params });
     if (token) q.set('access_token', token);
     const opt = { method, credentials: 'include', headers: {
+      'Accept': 'application/json, text/plain, */*',
       'Accept-Language': 'zh_CN',
       'Content-Type': 'application/json;charset=UTF-8',
     } };
@@ -99,7 +121,9 @@
       try { return JSON.parse(txt); } catch { return { code: r.status, message: txt.slice(0, 160) }; }
     } catch (e) {
       const abort = String(e && e.name) === 'AbortError';
-      return { code: abort ? -3 : -1, message: abort ? '请求超时（站点可能在限流），稍后再试' : String(e) };
+      if (!cooldowns.includes(path)) cooldowns.push(path);
+      startCooldown(60);
+      return { code: abort ? -3 : -1, message: abort ? '请求超时（站点在限流），已自动冷却 60 秒' : '网络被重置（站点风控），已自动冷却 60 秒' };
     } finally {
       clearTimeout(timer);
     }
@@ -204,7 +228,7 @@
     TL.sc = sc; TL.page = page;
     const box = $('#unlock-tlist-rows');
     box.innerHTML = '<div>加载中…</div>';
-    const r = await api('getTList', { params: { sc, page, limit: 20 } });
+    const r = await api('getTList', { params: { sc, page, limit: 10 } });
     if (r.code !== 200) {
       box.innerHTML = '<div style="color:#f53f3f">加载失败：' + (r.message || r.code)
         + '<br><span style="color:#5d6878">站点有频率限制，等 10~30 分钟再试；别连续点。</span></div>';
