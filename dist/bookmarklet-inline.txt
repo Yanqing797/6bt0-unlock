@@ -684,7 +684,20 @@ const dd = det.data || {};
 const n = Object.values(dd.movies_online_seed || {}).reduce((a, v) => a + (v || []).filter((x) => x && x.link).length, 0);
 parts.push('detail=' + det.code + ':' + n);
 parts.push('ms=' + (Date.now() - t0));
-document.title = 'DBG|' + parts.join('|');
+let domInfo = 'nodom';
+try {
+const box = $('#unlock-tlist-rows');
+if (box) {
+await loadTList(1, 1);
+const rows = box.querySelectorAll('div').length;
+const txt = (box.innerText || '').replace(/\s+/g, ' ').slice(0, 40);
+domInfo = 'rows=' + rows + ',txt=' + txt;
+}
+} catch (e) { domInfo = 'err=' + String(e && e.message || e).slice(0, 30); }
+const metaEl = $('#unlock-meta');
+parts.push('dom={' + domInfo + '}');
+parts.push('meta=' + ((metaEl && metaEl.innerText) || '-').replace(/\s+/g, ' ').slice(0, 30));
+document.title = 'DBG|' + parts.join('|').slice(0, 300);
 }
 /* ────────────────────────── 启动 ────────────────────────── */
 function boot() {

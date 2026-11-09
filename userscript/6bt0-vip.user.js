@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.4.1
+// @version      1.4.2
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载（会员解锁已于 2026-11-09 被站点修复）
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -757,7 +757,21 @@
     const n = Object.values(dd.movies_online_seed || {}).reduce((a, v) => a + (v || []).filter((x) => x && x.link).length, 0);
     parts.push('detail=' + det.code + ':' + n);
     parts.push('ms=' + (Date.now() - t0));
-    document.title = 'DBG|' + parts.join('|');
+    // 再模拟一次"点开资源列表"，把 DOM 结果也报出来
+    let domInfo = 'nodom';
+    try {
+      const box = $('#unlock-tlist-rows');
+      if (box) {
+        await loadTList(1, 1);
+        const rows = box.querySelectorAll('div').length;
+        const txt = (box.innerText || '').replace(/\s+/g, ' ').slice(0, 40);
+        domInfo = 'rows=' + rows + ',txt=' + txt;
+      }
+    } catch (e) { domInfo = 'err=' + String(e && e.message || e).slice(0, 30); }
+    const metaEl = $('#unlock-meta');
+    parts.push('dom={' + domInfo + '}');
+    parts.push('meta=' + ((metaEl && metaEl.innerText) || '-').replace(/\s+/g, ' ').slice(0, 30));
+    document.title = 'DBG|' + parts.join('|').slice(0, 300);
   }
 
   /* ────────────────────────── 启动 ────────────────────────── */
