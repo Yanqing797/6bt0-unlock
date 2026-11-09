@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.3.0
+// @version      1.3.1
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载（会员解锁已于 2026-11-09 被站点修复）
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -91,12 +91,17 @@
     } };
     if (token) opt.headers.Authorization = 'Bearer ' + token;
     if (body !== undefined) opt.body = JSON.stringify(body);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
     try {
-      const r = await fetch(API + path.replace(/^\//, '') + '?' + q.toString(), opt);
+      const r = await fetch(API + path.replace(/^\//, '') + '?' + q.toString(), { ...opt, signal: ctrl.signal });
       const txt = await r.text();
       try { return JSON.parse(txt); } catch { return { code: r.status, message: txt.slice(0, 160) }; }
     } catch (e) {
-      return { code: -1, message: String(e) };
+      const abort = String(e && e.name) === 'AbortError';
+      return { code: abort ? -3 : -1, message: abort ? '请求超时（站点可能在限流），稍后再试' : String(e) };
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -200,7 +205,11 @@
     const box = $('#unlock-tlist-rows');
     box.innerHTML = '<div>加载中…</div>';
     const r = await api('getTList', { params: { sc, page, limit: 20 } });
-    if (r.code !== 200) { box.innerHTML = '<div>加载失败：' + (r.message || r.code) + '</div>'; return; }
+    if (r.code !== 200) {
+      box.innerHTML = '<div style="color:#f53f3f">加载失败：' + (r.message || r.code)
+        + '<br><span style="color:#5d6878">站点有频率限制，等 10~30 分钟再试；别连续点。</span></div>';
+      return;
+    }
     const rows = (r.data && r.data.list) || [];
     TL.rows = rows;
     if (!rows.length) { box.innerHTML = '<div>没有更多了（第 ' + page + ' 页）</div>'; return; }
