@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.4.0
+// @version      1.4.1
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载（会员解锁已于 2026-11-09 被站点修复）
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -734,10 +734,39 @@
     });
   }
 
+  /* ────────────────────────── 诊断模式（?__6bt0dbg=1） ────────────────────────── */
+  // 把状态写进 document.title，无法执行 JS 的环境也能读取：标题形如
+  // DBG|user=xxx|vip=1|tok=1|info=200|list=200:10|detail=200:3|msgs=...
+  async function runDebug() {
+    const parts = [];
+    const t0 = Date.now();
+    const tk = tok();
+    parts.push('tok=' + (tk ? tk.length : 0));
+    const info = await api('getInfo');
+    parts.push('info=' + info.code);
+    const u = (info.data || {}).user;
+    parts.push('user=' + (u ? u.username : '-'));
+    parts.push('vip=' + (u ? u.is_vip : '-'));
+    if (info.message) parts.push('imsg=' + String(info.message).slice(0, 20));
+    const list = await api('getTList', { params: { sc: 1, page: 1, limit: 3 } });
+    const rows = (list.data && list.data.list) || [];
+    parts.push('list=' + list.code + ':' + rows.length);
+    if (list.message) parts.push('lmsg=' + String(list.message).slice(0, 20));
+    const det = await api('getVideoDetail', { params: { id: '35811064' } });
+    const dd = det.data || {};
+    const n = Object.values(dd.movies_online_seed || {}).reduce((a, v) => a + (v || []).filter((x) => x && x.link).length, 0);
+    parts.push('detail=' + det.code + ':' + n);
+    parts.push('ms=' + (Date.now() - t0));
+    document.title = 'DBG|' + parts.join('|');
+  }
+
   /* ────────────────────────── 启动 ────────────────────────── */
   function boot() {
     mount();
     bindAuth();
+    if (location.search.indexOf('__6bt0dbg') >= 0) {
+      runDebug().catch((e) => { document.title = 'DBG|ERR|' + String(e && e.message || e).slice(0, 60); });
+    }
   }
 
   if (document.readyState === 'loading') {
