@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.5.3
+// @version      1.5.4
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -249,7 +249,15 @@
     if (!rows.length) { box.innerHTML = '<div>没有更多了（第 ' + page + ' 页）</div>'; return; }
     box.innerHTML = rows.map((it, i) => {
       const name = esc(String(it.zname || it.title || '').slice(0, 48));
-      const meta = [it.zsize, String(it.ezt || '').slice(0, 10), Number(it.need_vip) === 1 ? 'VIP' : '免费']
+      const fmtDate = (v) => {
+        const str = String(v == null ? '' : v);
+        if (/^\d{10}$/.test(str)) {
+          const d = new Date(Number(str) * 1000);
+          return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+        return str.slice(0, 10);
+      };
+      const meta = [it.zsize, fmtDate(it.ezt), Number(it.need_vip) === 1 ? 'VIP' : '免费']
         .filter(Boolean).map(esc).join(' · ');
       return '<div style="padding:5px 0">' + name
         + '<br><span style="color:#5d6878">' + meta + '</span> '
@@ -285,7 +293,7 @@
 
     const all = [];
     let page = 1;
-    const MAX = 20;   // 站点列表约 400 条（20 页），再多也是空
+    const MAX = 10;   // 每类最多 200 条；站点风控敏感，想更多就再点一次
     try {
       while (page <= MAX && !crawlStop) {
         logStep('抓取第 ' + page + ' 页…（已收集 ' + all.length + ' 条）');
