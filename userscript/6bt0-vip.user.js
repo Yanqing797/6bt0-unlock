@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.8.0
+// @version      1.8.1
 // @description  6bt0 / 0bt0~9bt0 网盘直链 + 磁力链接导出 + 最新资源列表批量下载
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -52,7 +52,17 @@
   const isVip = (u) => !!u && (Number(u.is_vip) === 2 || Number(u.is_permanent_vip) === 1
     || String(u.vip_type) === '4');
   const $ = (sel, root = document) => root.querySelector(sel);
-  const tok = () => localStorage.getItem(LS_TOKEN) || '';
+  // 站点把自己的 storage 封装成 JSON.stringify 存取：值形如 "\"eyJ...\""
+  // 必须按同样格式写，站点才会认；读取时两种格式都兼容
+  const tok = () => {
+    const raw = localStorage.getItem(LS_TOKEN) || '';
+    if (!raw) return '';
+    try { const v = JSON.parse(raw); return typeof v === 'string' ? v : raw; } catch { return raw; }
+  };
+  const setToken = (t) => {
+    try { localStorage.setItem(LS_TOKEN, JSON.stringify(t)); }
+    catch { localStorage.setItem(LS_TOKEN, t); }
+  };
   const randId = () => 'u' + Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 4);
   const randPw = () => 'Kq' + Math.random().toString(36).slice(2, 10) + '!9';
 
@@ -189,7 +199,7 @@
   async function doLogin(username, password, code, key) {
     const r = await api('login', { params: { username, password, code, key }, token: '' });
     if (r.code === 200 && r.data && r.data.access_token) {
-      localStorage.setItem(LS_TOKEN, r.data.access_token);
+      setToken(r.data.access_token);
       return true;
     }
     throw new Error(r.message || '登录失败');
@@ -202,7 +212,7 @@
     });
     if (r.code === 200) {
       const t = r.data && r.data.access_token;
-      if (t) { localStorage.setItem(LS_TOKEN, t); return true; }
+      if (t) { setToken(t); return true; }
       localStorage.removeItem(LS_TOKEN);   // 注册成功但没给 token：不能沿用旧账号的 token
       return false;
     }
