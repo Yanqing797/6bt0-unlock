@@ -1,5 +1,10 @@
 javascript:(function(){(function () {
 'use strict';
+var __stale = document.getElementById('unlock-panel');
+if (__stale && !__stale.querySelector('#unlock-tlist-all')) {
+__stale.remove();
+window.__6bt0UnlockLoaded = false;
+}
 if (window.__6bt0UnlockLoaded) return;
 window.__6bt0UnlockLoaded = true;
 /* ────────────────────────── 常量 ────────────────────────── */
@@ -703,8 +708,6 @@ document.title = 'DBG|' + parts.join('|').slice(0, 300);
 }
 /* ────────────────────────── 启动 ────────────────────────── */
 function boot() {
-const stale = document.querySelector('#unlock-panel');
-if (stale && !stale.querySelector('#unlock-tlist-all')) stale.remove();
 mount();
 bindAuth();
 if (location.search.indexOf('__6bt0dbg') >= 0) {

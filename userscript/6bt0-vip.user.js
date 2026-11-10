@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.5.4
+// @version      1.5.5
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -19,6 +19,12 @@
 
 (function () {
   'use strict';
+  // 先把旧版面板干掉（旧版没有「导出全部页链接」按钮），再决定要不要继续
+  var __stale = document.getElementById('unlock-panel');
+  if (__stale && !__stale.querySelector('#unlock-tlist-all')) {
+    __stale.remove();
+    window.__6bt0UnlockLoaded = false;
+  }
   if (window.__6bt0UnlockLoaded) return;
   window.__6bt0UnlockLoaded = true;
 
@@ -779,9 +785,6 @@
 
   /* ────────────────────────── 启动 ────────────────────────── */
   function boot() {
-    // 若页面上已有旧版面板（没有「导出全部页」按钮），直接替换掉
-    const stale = document.querySelector('#unlock-panel');
-    if (stale && !stale.querySelector('#unlock-tlist-all')) stale.remove();
     mount();
     bindAuth();
     if (location.search.indexOf('__6bt0dbg') >= 0) {
