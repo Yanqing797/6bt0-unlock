@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.6.1
+// @version      1.7.0
 // @description  6bt0 / 0bt0~9bt0 网盘直链 + 磁力链接导出 + 最新资源列表批量下载
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -476,8 +476,8 @@
         </div>
         <div class="unlock-sep"></div>
         <div class="unlock-row">
-          <button class="unlock-btn ghost" id="unlock-reg">自动注册小号</button>
-          <button class="unlock-btn ghost" id="unlock-login">登录</button>
+          <button class="unlock-btn ghost" id="unlock-reg" title="生成一个全新小号并自动登录，不影响你原来的账号">一键创建小号</button>
+          <button class="unlock-btn ghost" id="unlock-login" title="用本机保存的小号登录">登录</button>
         </div>
         <div class="unlock-row">
           <button class="unlock-btn ghost" id="unlock-reset" title="清掉本机保存的账号和登录凭证，重新开始">重置本机账号</button>
@@ -595,7 +595,7 @@
       const acc = loadAcc();
       meta.innerHTML = acc && acc.username
         ? `未登录 · 已保存账号 <b>${esc(acc.username)}</b>`
-        : '未登录（点下面自动注册）';
+        : '未登录（点「一键创建小号」）';
       return;
     }
     const vip = isVip(u);
@@ -692,19 +692,13 @@
     if (!willOpen) return;
     tip('');
     if (mode === 'reg') {
-      const left = regCooldownLeft();
-      const acc0 = loadAcc();
-      if (left > 0 && acc0.username) {
-        // 已经有号就别再注册（批量注册是最容易被风控的行为）
-        authMode = 'login';
-        tip('本机已有账号 ' + acc0.username + '，自动切到登录（填一次验证码即可）');
-        await loadCaptcha();
-        return;
-      }
-      // 冷却已过：每次都生成全新身份，避免复用旧用户名撞“已存在”
+      // 每次都生成全新身份；先清掉当前 token，绝不碰原来的账号
+      localStorage.removeItem(LS_TOKEN);
       const uname = randId();
       saveAcc({ username: uname, password: randPw(), email: uname + '@mailinator.com' });
-      tip('算出图片里的算术题 → 点确定，注册成功后会自动登录（无需再点登录）');
+      const left = regCooldownLeft();
+      tip('新小号 ' + uname + '：填一次算术题，注册成功后会自动登录'
+          + (left > 0 ? '（提示：短时间内多次注册容易被风控）' : ''));
     } else {
       const acc = loadAcc();
       tip(acc.username ? '用本机保存的账号 ' + acc.username + ' 登录，只需填一次验证码' : '本机还没有账号，请先点「自动注册小号」');
@@ -778,7 +772,7 @@
             return;                       // 保持面板打开
           }
         } else {
-          if (!acc.username || !acc.password) throw new Error('本机没有可用账号，请先点「自动注册小号」或「重置本机账号」');
+          if (!acc.username || !acc.password) throw new Error('本机没有可用账号，请先点「一键创建小号」');
           tip('登录中…');
           await doLogin(acc.username, acc.password, code, capData.key);
           const ok = await finishAuth('登录成功', acc.username);
