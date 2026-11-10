@@ -173,6 +173,25 @@ return false;
 throw new Error(r.message || '注册失败');
 }
 /* ────────────────────────── 主流程 ────────────────────────── */
+/** 取磁力：站点自己的 recordMagnetView（登录用户点「查看磁力」时调的就是它） */
+async function fetchMagnet(seedId) {
+const r = await api('recordMagnetView', { params: { id: seedId } });
+if (r.code === 200 && r.data && r.data.zlink) return String(r.data.zlink).trim();
+if (r.data && r.data.need_view_verify) throw new Error('站点要求完成观看验证，请先在网页上手动点一次「查看磁力」');
+if ([10103, 10104].includes(Number(r.code))) throw new Error('需要登录才能取磁力，请先点「登录」');
+throw new Error(r.message || '获取磁力失败');
+}
+async function copyMagnet(seedId, label) {
+try {
+const m = await fetchMagnet(seedId);
+if (navigator.clipboard) await navigator.clipboard.writeText(m).catch(() => {});
+toast('✔ 磁力已复制' + (label ? '：' + label.slice(0, 14) : ''), 'ok', 3500);
+return m;
+} catch (e) {
+toast(String(e.message || e), 'err', 5000);
+return null;
+}
+}
 async function fetchLinks(idcode) {
 let r = await api('getVideoDetail', { params: { id: idcode } });
 if ([10103, 10104].includes(Number(r.code)) && tok()) {
@@ -227,8 +246,21 @@ const meta = [it.zsize, fmtDate(it.ezt), Number(it.need_vip) === 1 ? 'VIP' : '�
 .filter(Boolean).map(esc).join(' · ');
 return '<div style="padding:5px 0">' + name
 + '<br><span style="color:#5d6878">' + meta + '</span> '
-+ '<a href="#" data-open="' + i + '" style="color:#4d8bff;margin-left:6px">下载</a></div>';
++ '<a href="#" data-open="' + i + '" style="color:#4d8bff;margin-left:6px">下载</a>'
++ '<a href="#" data-magnet="' + i + '" style="color:#f7ba1e;margin-left:8px">磁力</a></div>';
 }).join('');
+box.querySelectorAll('[data-magnet]').forEach((a) => {
+a.onclick = async (e) => {
+e.preventDefault();
+const it = TL.rows[Number(a.dataset.magnet)];
+if (!it) return;
+const seedId = Number(it.id || 0) || (String(it.aurl || '').match(/(\d+)/) || [])[1];
+if (!seedId) { toast('这条没有种子 id', 'err'); return; }
+a.textContent = '取磁力…';
+await copyMagnet(seedId, String(it.zname || it.title || ''));
+a.textContent = '磁力';
+};
+});
 box.querySelectorAll('[data-open]').forEach((a) => {
 a.onclick = (e) => {
 e.preventDefault();
@@ -369,6 +401,9 @@ p.innerHTML = `
 <button class="unlock-btn" id="unlock-export">导出本页直链</button>
 <button class="unlock-btn" id="unlock-batch">批量导出</button>
 </div>
+<div class="unlock-row" id="unlock-magnet-row" style="display:none">
+<button class="unlock-btn primary" id="unlock-magnet">复制本页磁力</button>
+</div>
 <div class="unlock-row">
 <button class="unlock-btn" id="unlock-tlist">最新资源列表</button>
 </div>
@@ -444,6 +479,19 @@ b.style.display = b.style.display === 'none' ? 'block' : 'none';
 $('#unlock-batchgo').onclick = () => run('batch');
 $('#unlock-reg').onclick = () => auth('reg');
 $('#unlock-login').onclick = () => auth('login');
+const trm = location.pathname.match(/\/tr\/(\d+)\.html/);
+if (trm) {
+const row = $('#unlock-magnet-row');
+if (row) row.style.display = 'flex';
+$('#unlock-magnet').onclick = async () => {
+const btn = $('#unlock-magnet');
+btn.disabled = true;
+btn.textContent = '获取中…';
+const m = await copyMagnet(trm[1], '');
+btn.disabled = false;
+btn.textContent = m ? '再复制一次' : '复制本页磁力';
+};
+}
 $('#unlock-tlist').onclick = () => {
 const b = $('#unlock-tlistbox');
 b.style.display = b.style.display === 'none' ? 'block' : 'none';
