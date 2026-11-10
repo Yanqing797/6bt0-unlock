@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
+// @name         6bt0（不太灵） 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.4.2
-// @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载（会员解锁已于 2026-11-09 被站点修复）
+// @version      1.5.0
+// @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
 // @supportURL   https://github.com/Yanqing797/6bt0-unlock/issues
@@ -25,8 +25,6 @@
   /* ────────────────────────── 常量 ────────────────────────── */
   const FIX = { app_id: '83768d9ad4', identity: '23734adac0301bccdcb107c4aa21f96c' };
   const API = '/prod/api/v1/';
-  const PLANS = { 11: 599, 10: 578, 9: 318, 8: 198 };   // vip_id → 默认金额（金额随便填，仅用于伪装）
-  const PLAN_NAME = { 11: '永久会员', 10: '年度付费', 9: '半年付费', 8: '季度付费' };
   const TYPE_NAME = {
     ali: '阿里云盘', quark: '夸克', xunlei: '迅雷', baidu: '百度', '115': '115',
     guangya: '光鸭', yidong: '移动云盘', uc: 'UC', '123': '123网盘', other: '其他',
@@ -168,23 +166,6 @@
     }
   }
 
-  /** 核心：伪造支付成功回调。站点不校验网关签名，订单直接变为已支付。 */
-  async function forgeNotify(orderId, money, type) {
-    const q = new URLSearchParams({
-      app_id: FIX.app_id,
-      out_trade_no: orderId,
-      trade_no: 'T' + Date.now(),
-      trade_status: 'TRADE_SUCCESS',
-      money: String(money),
-      type: String(type || 1),
-    });
-    try {
-      const r = await fetch('/notify?' + q.toString(), { credentials: 'include' });
-      return (await r.text()).trim().slice(0, 40);
-    } catch (e) {
-      return 'ERR ' + e;
-    }
-  }
 
   /* ────────────────────────── 账号 ────────────────────────── */
   async function whoami() {
@@ -223,29 +204,6 @@
   }
 
   /* ────────────────────────── 主流程 ────────────────────────── */
-  async function unlockVip(vipId) {
-    const money = PLANS[vipId] || 599;
-    logStep('① 下单 ' + (PLAN_NAME[vipId] || vipId) + ' …');
-    const o = await api('payOrder', { params: { vip_id: vipId, type: 1 } });
-    if (o.code !== 200 || !o.data || !o.data.order_id) throw new Error('下单失败: ' + (o.message || o.code));
-    const oid = o.data.order_id;
-
-    logStep('② 伪造支付回调 …');
-    const cb = await forgeNotify(oid, money, 1);
-
-    logStep('③ 校验会员 …');
-    for (let i = 0; i < 8; i++) {
-      await sleep(800);
-      const u = await whoami();
-      if (u && (Number(u.is_vip) === 2 || Number(u.is_permanent_vip) === 1 || String(u.vip_type) === '4')) {
-        logStep('');
-        return { ok: true, user: u, order: oid, cb };
-      }
-    }
-    const u = await whoami();
-    logStep('');
-    return { ok: false, user: u, order: oid, cb };
-  }
 
   async function fetchLinks(idcode) {
     let r = await api('getVideoDetail', { params: { id: idcode } });
@@ -392,9 +350,6 @@
         <div class="unlock-meta" id="unlock-meta">正在检测登录状态…</div>
         <div id="unlock-progress"></div>
         <div class="unlock-row">
-          <button class="unlock-btn primary" id="unlock-vip">一键解锁永久会员</button>
-        </div>
-        <div class="unlock-row">
           <button class="unlock-btn" id="unlock-export">导出本页直链</button>
           <button class="unlock-btn" id="unlock-batch">批量导出</button>
         </div>
@@ -438,8 +393,7 @@
         </div>
         <div class="unlock-list" id="unlock-result" style="display:none"></div>
         <div class="unlock-tip" id="unlock-status">
-          状态：会员解锁已于 <b>2026-11-09</b> 被站点修复（<code>/notify</code> 现在校验签名）。
-          直链导出仍可用，每部影片约 3 条公开直链。
+          每部影片可导出约 3 条公开网盘直链（含提取码）；「最新资源列表」可翻全站免费资源。
         </div>
       </div>`;
     document.body.appendChild(p);
@@ -466,7 +420,6 @@
       document.addEventListener('mouseup', () => (on = false));
     })();
 
-    $('#unlock-vip').onclick = () => run('vip');
     $('#unlock-export').onclick = () => run('export');
     $('#unlock-batch').onclick = () => {
       const b = $('#unlock-batchbox');
@@ -534,20 +487,8 @@
   const busy = (id, on) => { const b = $('#' + id); if (b) b.disabled = on; };
 
   async function run(kind) {
-    if (kind === 'vip' && !tok()) { toast('请先注册/登录', 'err'); return; }
     try {
-      if (kind === 'vip') {
-        busy('unlock-vip', true);
-        const r = await unlockVip(11);
-        busy('unlock-vip', false);
-        if (r.ok) {
-          toast('✔ 永久会员已开通：' + (r.user.vip_expire_at || ''), 'ok');
-          await refreshMeta();
-        } else {
-          toast('解锁失败：站点已修复支付回调（回调返回 ' + (r.cb || 'fail') + '）。'
-                + '当前仍可点「导出本页直链」拿公开直链。', 'err', 6000);
-        }
-      } else if (kind === 'export') {
+      if (kind === 'export') {
         const m = (location.pathname + location.hash).match(/\/(?:mv|tv|detail|video)\/(\d+)/);
         if (!m) { toast('请在影片详情页使用', 'err'); return; }
         busy('unlock-export', true);
@@ -585,7 +526,7 @@
       }
     } catch (e) {
       logStep('');
-      busy('unlock-vip', false); busy('unlock-export', false); busy('unlock-batchgo', false);
+      busy('unlock-export', false); busy('unlock-batchgo', false);
       toast(String(e.message || e), 'err');
     }
   }
