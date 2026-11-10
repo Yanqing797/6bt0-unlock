@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         6bt0（不太灵） 网盘直链导出
+// @name         6bt0（不太灵） 会员解锁 + 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.5.1
+// @version      1.5.2
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
