@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.7.0
+// @version      1.8.0
 // @description  6bt0 / 0bt0~9bt0 网盘直链 + 磁力链接导出 + 最新资源列表批量下载
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -476,8 +476,7 @@
         </div>
         <div class="unlock-sep"></div>
         <div class="unlock-row">
-          <button class="unlock-btn ghost" id="unlock-reg" title="生成一个全新小号并自动登录，不影响你原来的账号">一键创建小号</button>
-          <button class="unlock-btn ghost" id="unlock-login" title="用本机保存的小号登录">登录</button>
+          <button class="unlock-btn primary" id="unlock-reg" title="生成一个全新小号并自动登录，不影响你原来的账号">一键创建小号</button>
         </div>
         <div class="unlock-row">
           <button class="unlock-btn ghost" id="unlock-reset" title="清掉本机保存的账号和登录凭证，重新开始">重置本机账号</button>
@@ -531,8 +530,7 @@
       b.style.display = b.style.display === 'none' ? 'block' : 'none';
     };
     $('#unlock-batchgo').onclick = () => run('batch');
-    $('#unlock-reg').onclick = () => auth('reg');
-    $('#unlock-login').onclick = () => auth('login');
+    $('#unlock-reg').onclick = () => openCreate();
 
     // 最新资源列表
     // 种子详情页 /tr/<id>.html：直接给一个「复制本页磁力」
@@ -566,13 +564,11 @@
       loadTList(TL.sc, TL.page + 1).catch(() => {});
     };
     $('#unlock-reset').onclick = () => {
-      localStorage.removeItem(LS_ACC);
-      localStorage.removeItem(LS_LASTREG);
-      localStorage.removeItem(LS_TOKEN);
-      authMode = 'reg';
-      $('#unlock-auth').style.display = 'block';
-      tip('已清除本机账号与登录态，可以重新自动注册', 'ok');
+      ['6bt0_unlock_account', '6bt0_unlock_lastreg', '6bt0_unlock_budget', 'token'].forEach((k) => localStorage.removeItem(k));
+      $('#unlock-auth').style.display = 'none';
+      toast('已清除本机所有账号与登录态', 'ok', 3000);
       refreshMeta();
+      setTimeout(() => location.reload(), 700);
     };
     $('#unlock-tlist-all').onclick = () => crawlAllPages(TL.sc).catch((e) => toast(String(e.message || e), 'err'));
     $('#unlock-tlist-copy').onclick = async () => {
@@ -670,7 +666,6 @@
   }
 
   /* ────────────────────────── 登录 / 注册（全自动） ────────────────────────── */
-  let authMode = 'reg';
   let capData = null;
   let authBusy = false;
 
@@ -684,25 +679,17 @@
     el.style.color = kind === 'err' ? '#f53f3f' : kind === 'ok' ? '#00b42a' : '#5d6878';
   }
 
-  async function auth(mode) {
-    authMode = mode;
+  /* 一键创建小号：清 token → 新身份 → 用户填一次验证码 → 注册 → 自动登录 → 刷新 */
+  async function openCreate() {
     const box = $('#unlock-auth');
     const willOpen = box.style.display !== 'block';
     box.style.display = willOpen ? 'block' : 'none';
     if (!willOpen) return;
     tip('');
-    if (mode === 'reg') {
-      // 每次都生成全新身份；先清掉当前 token，绝不碰原来的账号
-      localStorage.removeItem(LS_TOKEN);
-      const uname = randId();
-      saveAcc({ username: uname, password: randPw(), email: uname + '@mailinator.com' });
-      const left = regCooldownLeft();
-      tip('新小号 ' + uname + '：填一次算术题，注册成功后会自动登录'
-          + (left > 0 ? '（提示：短时间内多次注册容易被风控）' : ''));
-    } else {
-      const acc = loadAcc();
-      tip(acc.username ? '用本机保存的账号 ' + acc.username + ' 登录，只需填一次验证码' : '本机还没有账号，请先点「自动注册小号」');
-    }
+    localStorage.removeItem(LS_TOKEN);              // 只清登录态，不动服务器上的账号
+    const uname = randId();
+    saveAcc({ username: uname, password: randPw(), email: uname + '@mailinator.com' });
+    tip('新小号：' + uname + ' — 填下面的算术答案，点「确定」即自动注册并登录');
     await loadCaptcha();
   }
 
@@ -716,23 +703,17 @@
     }
   }
 
-  /** 拿到 token 后立刻校验，成功则刷新页面让站点自身也进入登录态 */
   async function finishAuth(okMsg, expected) {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       const u = await whoami();
-      // 不再要求用户名完全相等：站点可能对用户名做归一化。
-      // 只要拿到有效用户且 token 已改写，就认为登录成功。
-      const same = !expected || String(u && u.username || '').toLowerCase() === String(expected).toLowerCase();
-      if (u && (same || tok())) {
+      if (u) {
         tip('✔ ' + okMsg + '：' + (u.nickname || u.username), 'ok');
-        toast('✔ ' + okMsg + '，即将刷新页面', 'ok');
-        await refreshMeta();
-        setTimeout(() => location.reload(), 900);
+        toast('✔ ' + okMsg + '，正在刷新…', 'ok', 3000);
         return true;
       }
-      await sleep(700);
+      await sleep(600);
     }
-    tip('已拿到凭证但校验失败（站点可能限制新号）。稍后点「登录」再试一次。', 'err');
+    tip('注册成功但登录态没生效，请再点一次「一键创建小号」', 'err');
     return false;
   }
 
@@ -751,83 +732,27 @@
       const acc = loadAcc();
 
       try {
-        if (authMode === 'reg') {
-          tip('注册中…');
-          const username = acc.username || randId();
-          const password = acc.password || randPw();
-          const email = username + '@mailinator.com';
-          const logged = await doRegister(username, password, email, code, capData.key);
-          saveAcc({ username, password, email, at: Date.now() });
-          localStorage.setItem(LS_LASTREG, String(Date.now()));
-          if (!logged) {
-            authMode = 'login';
-            tip('注册成功但没有返回登录凭证，请再填一次验证码登录', 'err');
-            await loadCaptcha();
-            return;
-          }
-          const ok = await finishAuth('注册成功并已登录', username);
-          if (!ok) {
-            tip('注册成功，但登录校验没通过；请点「登录」重试', 'err');
-            toast('自动登录校验失败，请点「登录」重试', 'err', 5000);
-            return;                       // 保持面板打开
-          }
-        } else {
-          if (!acc.username || !acc.password) throw new Error('本机没有可用账号，请先点「一键创建小号」');
-          tip('登录中…');
-          await doLogin(acc.username, acc.password, code, capData.key);
-          const ok = await finishAuth('登录成功', acc.username);
-          if (!ok) { tip('登录未通过校验，请重试或重置本机账号', 'err'); return; }
+        tip('注册中…');
+        const username = acc.username || randId();
+        const password = acc.password || randPw();
+        const logged = await doRegister(username, password, username + '@mailinator.com', code, capData.key);
+        if (!logged) {
+          tip('注册成功但站点没返回登录凭证，请再点一次「一键创建小号」', 'err');
+          await loadCaptcha();
+          return;
         }
-        $('#unlock-auth').style.display = 'none';
+        const ok = await finishAuth('小号已创建并登录', username);
+        if (ok) {
+          setTimeout(() => location.reload(), 800);
+        }
       } catch (err) {
         tip('✘ ' + (err.message || err), 'err');
-        toast(String(err.message || err), 'err', 4000);
-        await loadCaptcha();          // 失败后自动换一张，输入框保留在页面上
+        await loadCaptcha();
       } finally {
         authBusy = false;
         btn.disabled = false;
       }
     });
-  }
-
-  /* ────────────────────────── 诊断模式（?__6bt0dbg=1） ────────────────────────── */
-  // 把状态写进 document.title，无法执行 JS 的环境也能读取：标题形如
-  // DBG|user=xxx|vip=1|tok=1|info=200|list=200:10|detail=200:3|msgs=...
-  async function runDebug() {
-    const parts = [];
-    const t0 = Date.now();
-    const tk = tok();
-    parts.push('tok=' + (tk ? tk.length : 0));
-    const info = await api('getInfo');
-    parts.push('info=' + info.code);
-    const u = (info.data || {}).user;
-    parts.push('user=' + (u ? u.username : '-'));
-    parts.push('vip=' + (u ? u.is_vip : '-'));
-    if (info.message) parts.push('imsg=' + String(info.message).slice(0, 20));
-    const list = await api('getTList', { params: { sc: 1, page: 1, limit: 3 } });
-    const rows = (list.data && list.data.list) || [];
-    parts.push('list=' + list.code + ':' + rows.length);
-    if (list.message) parts.push('lmsg=' + String(list.message).slice(0, 20));
-    const det = await api('getVideoDetail', { params: { id: '35811064' } });
-    const dd = det.data || {};
-    const n = Object.values(dd.movies_online_seed || {}).reduce((a, v) => a + (v || []).filter((x) => x && x.link).length, 0);
-    parts.push('detail=' + det.code + ':' + n);
-    parts.push('ms=' + (Date.now() - t0));
-    // 再模拟一次"点开资源列表"，把 DOM 结果也报出来
-    let domInfo = 'nodom';
-    try {
-      const box = $('#unlock-tlist-rows');
-      if (box) {
-        await loadTList(1, 1);
-        const rows = box.querySelectorAll('div').length;
-        const txt = (box.innerText || '').replace(/\s+/g, ' ').slice(0, 40);
-        domInfo = 'rows=' + rows + ',txt=' + txt;
-      }
-    } catch (e) { domInfo = 'err=' + String(e && e.message || e).slice(0, 30); }
-    const metaEl = $('#unlock-meta');
-    parts.push('dom={' + domInfo + '}');
-    parts.push('meta=' + ((metaEl && metaEl.innerText) || '-').replace(/\s+/g, ' ').slice(0, 30));
-    document.title = 'DBG|' + parts.join('|').slice(0, 300);
   }
 
   /* ────────────────────────── 启动 ────────────────────────── */
