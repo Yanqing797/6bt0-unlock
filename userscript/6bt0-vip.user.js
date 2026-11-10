@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.5.0
+// @version      1.5.1
 // @description  6bt0 / 0bt0~9bt0 网盘直链导出 + 最新资源列表批量下载
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -274,6 +274,56 @@
     });
   }
 
+  /* ── 多页抓取：把当前分类下所有页的 down 链接拉出来 ── */
+  let crawlStop = false;
+  async function crawlAllPages(sc) {
+    const btn = $('#unlock-tlist-all');
+    crawlStop = false;
+    btn.disabled = true;
+    btn.textContent = '抓取中…（再点一次停止）';
+    btn.onclick = () => { crawlStop = true; btn.textContent = '正在停止…'; };
+
+    const all = [];
+    let page = 1;
+    const MAX = 20;   // 站点列表约 400 条（20 页），再多也是空
+    try {
+      while (page <= MAX && !crawlStop) {
+        logStep('抓取第 ' + page + ' 页…（已收集 ' + all.length + ' 条）');
+        const r = await api('getTList', { params: { sc, page, limit: 20 } });
+        if (r.code !== 200) {
+          toast('第 ' + page + ' 页失败：' + (r.message || r.code), 'err', 5000);
+          break;
+        }
+        const rows = Array.isArray(r.data && r.data.list) ? r.data.list : [];
+        if (!rows.length) break;
+        for (const it of rows) {
+          if (it && it.down) {
+            all.push({
+              title: String(it.title || '').trim(),
+              name: String(it.zname || '').slice(0, 80),
+              size: String(it.zsize || ''),
+              date: String(it.ezt || '').slice(0, 10),
+              url: safeHref(it.down),
+            });
+          }
+        }
+        page += 1;
+        await sleep(1200 + Math.random() * 1300);   // 刻意放慢，别惊动站点
+      }
+    } finally {
+      logStep('');
+      btn.disabled = false;
+      btn.textContent = '导出全部页链接';
+      btn.onclick = () => crawlAllPages(TL.sc).catch((e) => toast(String(e.message || e), 'err'));
+    }
+
+    if (!all.length) { toast('没抓到链接', 'err'); return; }
+    const txt = all.map((r) => `${r.title}\t${r.name}\t${r.size}\t${r.date}\t${r.url}`).join('\n');
+    if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(() => {});
+    download('6bt0-全部资源', txt);
+    toast((crawlStop ? '已停止，' : '') + '共 ' + all.length + ' 条（已复制并下载）', 'ok', 5000);
+  }
+
   function download(name, text) {
     const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
     const a = document.createElement('a');
@@ -366,7 +416,10 @@
           <div class="unlock-row" style="margin-top:6px">
             <button class="unlock-btn" id="unlock-tlist-prev">上一页</button>
             <button class="unlock-btn" id="unlock-tlist-next">下一页</button>
-            <button class="unlock-btn" id="unlock-tlist-copy">复制全部</button>
+            <button class="unlock-btn" id="unlock-tlist-copy">复制本页</button>
+          </div>
+          <div class="unlock-row">
+            <button class="unlock-btn" id="unlock-tlist-all" title="会连续请求约 20 页（每页间隔 1~2.5 秒），可能触发站点限流，建议一次只抓一个分类">导出全部页链接</button>
           </div>
         </div>
         <div class="unlock-sep"></div>
@@ -454,6 +507,7 @@
       tip('已清除本机账号与登录态，可以重新自动注册', 'ok');
       refreshMeta();
     };
+    $('#unlock-tlist-all').onclick = () => crawlAllPages(TL.sc).catch((e) => toast(String(e.message || e), 'err'));
     $('#unlock-tlist-copy').onclick = async () => {
       const links = TL.rows.filter(r => r.down).map(r => location.origin + r.down).join('\n');
       if (!links) { toast('当前没有可复制的链接', 'err'); return; }
