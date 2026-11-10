@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         6bt0（不太灵） 网盘直链导出
 // @namespace    https://github.com/Yanqing797/6bt0-unlock
-// @version      1.6.0
+// @version      1.6.1
 // @description  6bt0 / 0bt0~9bt0 网盘直链 + 磁力链接导出 + 最新资源列表批量下载
 // @author       Yanqing
 // @homepageURL  https://github.com/Yanqing797/6bt0-unlock
@@ -223,7 +223,8 @@
   async function copyMagnet(seedId, label) {
     try {
       const m = await fetchMagnet(seedId);
-      if (navigator.clipboard) await navigator.clipboard.writeText(m).catch(() => {});
+      // 不 await 剪贴板：某些情况下 writeText 不 settle，会卡住整个流程
+      if (navigator.clipboard) navigator.clipboard.writeText(m).catch(() => {});
       toast('✔ 磁力已复制' + (label ? '：' + label.slice(0, 14) : ''), 'ok', 3500);
       return m;
     } catch (e) {

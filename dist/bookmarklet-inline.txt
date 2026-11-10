@@ -184,7 +184,7 @@ throw new Error(r.message || '获取磁力失败');
 async function copyMagnet(seedId, label) {
 try {
 const m = await fetchMagnet(seedId);
-if (navigator.clipboard) await navigator.clipboard.writeText(m).catch(() => {});
+if (navigator.clipboard) navigator.clipboard.writeText(m).catch(() => {});
 toast('✔ 磁力已复制' + (label ? '：' + label.slice(0, 14) : ''), 'ok', 3500);
 return m;
 } catch (e) {
